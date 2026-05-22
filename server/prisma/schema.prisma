@@ -1,0 +1,209 @@
+// Pulse — Database Schema
+// PostgreSQL via Prisma ORM
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id            String    @id @default(uuid())
+  email         String    @unique
+  username      String    @unique
+  displayName   String
+  password      String?
+  bio           String?   @default("")
+  avatarUrl     String?
+  coverUrl      String?
+  interests     String    @default("[]")
+  isVerified    Boolean   @default(false)
+  twoFactorEnabled Boolean @default(false)
+  oauthProvider String?
+  oauthId       String?
+  moodMode      String    @default("social") // "focus", "inspiration", "social"
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  // Relations
+  posts         Post[]
+  comments      Comment[]
+  likes         Like[]
+  reactions     Reaction[]
+  following     Follow[]   @relation("follower")
+  followers     Follow[]   @relation("following")
+  sentMessages  Message[]  @relation("sender")
+  receivedMessages Message[] @relation("receiver")
+  notifications Notification[]
+  hubMemberships HubMember[]
+  roomParticipants RoomParticipant[]
+
+  @@index([email])
+  @@index([username])
+}
+
+model Post {
+  id          String    @id @default(uuid())
+  content     String
+  mediaUrls   String    @default("[]")
+  mediaType   String?   // "image", "video", null
+  category    String    @default("social") // "focus", "inspiration", "social"
+  visibility  String    @default("public") // "public", "followers", "private"
+  viewCount   Int       @default(0)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  author      User      @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  authorId    String
+  hub         Hub?      @relation(fields: [hubId], references: [id])
+  hubId       String?
+
+  comments    Comment[]
+  likes       Like[]
+  reactions   Reaction[]
+
+  @@index([authorId])
+  @@index([createdAt])
+  @@index([category])
+}
+
+model Comment {
+  id        String   @id @default(uuid())
+  content   String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  author    User     @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  authorId  String
+  post      Post     @relation(fields: [postId], references: [id], onDelete: Cascade)
+  postId    String
+
+  @@index([postId])
+}
+
+model Like {
+  id        String   @id @default(uuid())
+  createdAt DateTime @default(now())
+
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId    String
+  post      Post     @relation(fields: [postId], references: [id], onDelete: Cascade)
+  postId    String
+
+  @@unique([userId, postId])
+}
+
+model Reaction {
+  id        String   @id @default(uuid())
+  type      String   // "fire", "love", "think", "laugh", "wow", "sad"
+  createdAt DateTime @default(now())
+
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId    String
+  post      Post     @relation(fields: [postId], references: [id], onDelete: Cascade)
+  postId    String
+
+  @@unique([userId, postId])
+}
+
+model Follow {
+  id         String   @id @default(uuid())
+  createdAt  DateTime @default(now())
+
+  follower   User     @relation("follower", fields: [followerId], references: [id], onDelete: Cascade)
+  followerId String
+  following  User     @relation("following", fields: [followingId], references: [id], onDelete: Cascade)
+  followingId String
+
+  @@unique([followerId, followingId])
+}
+
+model Message {
+  id        String   @id @default(uuid())
+  content   String
+  mediaUrl  String?
+  read      Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  sender    User     @relation("sender", fields: [senderId], references: [id], onDelete: Cascade)
+  senderId  String
+  receiver  User     @relation("receiver", fields: [receiverId], references: [id], onDelete: Cascade)
+  receiverId String
+
+  @@index([senderId, receiverId])
+  @@index([createdAt])
+}
+
+model Notification {
+  id        String   @id @default(uuid())
+  type      String   // "like", "comment", "follow", "mention", "reaction"
+  content   String
+  read      Boolean  @default(false)
+  refId     String?  // ID of the related entity
+  createdAt DateTime @default(now())
+
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId    String
+
+  @@index([userId])
+  @@index([createdAt])
+}
+
+model Hub {
+  id          String   @id @default(uuid())
+  name        String   @unique
+  description String
+  coverUrl    String?
+  category    String
+  isPrivate   Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  posts       Post[]
+  members     HubMember[]
+  rooms       Room[]
+
+  @@index([category])
+}
+
+model HubMember {
+  id        String   @id @default(uuid())
+  role      String   @default("member") // "admin", "moderator", "member"
+  createdAt DateTime @default(now())
+
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId    String
+  hub       Hub      @relation(fields: [hubId], references: [id], onDelete: Cascade)
+  hubId     String
+
+  @@unique([userId, hubId])
+}
+
+model Room {
+  id          String   @id @default(uuid())
+  name        String
+  type        String   @default("chat") // "chat", "watch_party"
+  expiresAt   DateTime // 24-hour expiry for Pop-up Rooms
+  createdAt   DateTime @default(now())
+
+  hub         Hub      @relation(fields: [hubId], references: [id], onDelete: Cascade)
+  hubId       String
+  participants RoomParticipant[]
+
+  @@index([expiresAt])
+}
+
+model RoomParticipant {
+  id        String   @id @default(uuid())
+  joinedAt  DateTime @default(now())
+
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId    String
+  room      Room     @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  roomId    String
+
+  @@unique([userId, roomId])
+}
